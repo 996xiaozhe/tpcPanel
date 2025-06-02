@@ -45,8 +45,7 @@ export default function DataImportPage() {
   const [progress, setProgress] = useState<ImportProgress>({ processed: 0, imported: 0, failed: 0, errors: [] })
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [previewData, setPreviewData] = useState<string>("")
-  const [uploadSpeed, setUploadSpeed] = useState<string>("")
-  const [estimatedTime, setEstimatedTime] = useState<string>("")
+  const [totalRows, setTotalRows] = useState<number>(0)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -152,17 +151,20 @@ export default function DataImportPage() {
     const selectedFile = e.target.files?.[0]
     if (selectedFile) {
       setFile(selectedFile)
+      setTotalRows(0) // 重置总行数
 
-      // 预览文件内容（只读取前1KB）
+      // 计算文件总行数
       const reader = new FileReader()
       reader.onload = (event) => {
         const content = event.target?.result as string
-        const lines = content.split("\n").slice(0, 10).join("\n")
-        setPreviewData(lines)
+        const lines = content.split("\n")
+        setTotalRows(lines.length)
+        
+        // 预览前10行
+        const previewLines = lines.slice(0, 10).join("\n")
+        setPreviewData(previewLines)
       }
-      // 只读取文件的前1KB用于预览
-      const blob = selectedFile.slice(0, 1024)
-      reader.readAsText(blob)
+      reader.readAsText(selectedFile)
     }
   }
 
@@ -286,16 +288,6 @@ export default function DataImportPage() {
   const handleStreamData = (data: any) => {
     if (data.type === "progress") {
       setProgress(data.data)
-
-      // 计算上传速度和预估时间
-      const elapsed = (Date.now() - startTimeRef.current) / 1000
-      const processedBytes = (data.data.processed / (file?.size || 0)) * (file?.size || 0)
-      const speed = processedBytes / elapsed
-      setUploadSpeed(formatSpeed(speed))
-
-      const remainingBytes = (file?.size || 0) - processedBytes
-      const remainingTime = remainingBytes / speed
-      setEstimatedTime(formatTime(remainingTime))
     } else if (data.type === "complete") {
       setImportResult(data.data)
       setIsUploading(false)
@@ -324,8 +316,9 @@ export default function DataImportPage() {
 
   const getProgressPercentage = () => {
     if (!file || progress.processed === 0) return 0
-    // 这是一个估算，基于处理的行数
-    return Math.min((progress.processed / 100000) * 100, 95) // 假设大文件有100k行
+    // 使用已处理行数和总行数的比例计算进度
+    if (totalRows === 0) return 0
+    return Math.min((progress.processed / totalRows) * 100, 100)
   }
 
   const selectedTableInfo = tables.find((t) => t.id === selectedTable)
@@ -451,7 +444,10 @@ export default function DataImportPage() {
                   </div>
                   <div className="flex justify-between text-xs text-gray-500 mt-1">
                     <span>支持 .txt, .csv, .dat, .tbl 格式文件</span>
-                    {file && <span>文件大小: {formatFileSize(file.size)}</span>}
+                    <div className="space-x-4">
+                      <span>文件大小: {formatFileSize(file?.size || 0)}</span>
+                      {totalRows > 0 && <span>总行数: {totalRows.toLocaleString()}</span>}
+                    </div>
                   </div>
                 </div>
 
@@ -464,7 +460,7 @@ export default function DataImportPage() {
 
                 {isUploading && (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                       <div className="bg-blue-50 p-3 rounded-lg">
                         <div className="text-blue-600 font-medium">已处理</div>
                         <div className="text-lg font-bold">{progress.processed.toLocaleString()}</div>
@@ -479,11 +475,6 @@ export default function DataImportPage() {
                         <div className="text-red-600 font-medium">失败</div>
                         <div className="text-lg font-bold">{progress.failed.toLocaleString()}</div>
                         <div className="text-xs text-gray-500">行</div>
-                      </div>
-                      <div className="bg-purple-50 p-3 rounded-lg">
-                        <div className="text-purple-600 font-medium">处理速度</div>
-                        <div className="text-lg font-bold">{uploadSpeed}</div>
-                        <div className="text-xs text-gray-500">预计剩余: {estimatedTime}</div>
                       </div>
                     </div>
 

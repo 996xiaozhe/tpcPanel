@@ -7,23 +7,41 @@ import traceback
 from fastapi.responses import JSONResponse
 import asyncio
 from datetime import datetime
+import json
 
 router = APIRouter()
 
 # 数据库连接池
 pool = None
 
+# 读取数据库配置
+def get_db_config():
+    try:
+        with open("config/database.json", "r") as f:
+            config = json.load(f)
+            return {
+                "user": config["username"],
+                "password": config["password"],
+                "database": config["database"],
+                "host": config["host"],
+                "port": config["port"]
+            }
+    except:
+        # 如果配置文件不存在，使用默认配置
+        return {
+            "user": "tpc_user",
+            "password": "tpc_password",
+            "database": "tpc_db",
+            "host": "localhost",
+            "port": 5432
+        }
+
 async def get_pool():
     global pool
     if pool is None:
         try:
-            pool = await asyncpg.create_pool(
-                user="tpc_user",
-                password="tpc_password",
-                database="tpc_db",
-                host="localhost",
-                port=5432
-            )
+            config = get_db_config()
+            pool = await asyncpg.create_pool(**config)
         except Exception as e:
             print(f"数据库连接错误: {str(e)}")
             print(f"错误详情: {traceback.format_exc()}")

@@ -1,10 +1,10 @@
 import os
 import asyncio
 import asyncpg
+import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
-import json
 from datetime import datetime
 from tpcc.api import router as tpcc_router
 
@@ -22,8 +22,18 @@ app.add_middleware(
 # 注册 TPC-C 路由
 app.include_router(tpcc_router, prefix="/api/tpcc", tags=["TPC-C"])
 
+# 读取数据库配置
+def get_db_config():
+    try:
+        with open("config/database.json", "r") as f:
+            config = json.load(f)
+            return f"postgresql://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+    except:
+        # 如果配置文件不存在，使用默认配置
+        return "postgresql://tpc_user:tpc_password@localhost:5432/tpc_db"
+
 # 数据库配置
-DB_URL = os.getenv("DATABASE_URL", "postgresql://tpc_user:tpc_password@localhost:5432/tpc_db")
+DB_URL = get_db_config()
 
 # TPC-H 查询模板
 TPC_H_QUERIES = {

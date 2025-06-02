@@ -1,0 +1,7 @@
+{
+  "host": "localhost",
+  "port": 5432,
+  "database": "tpc_db",
+  "username": "tpc_user",
+  "password": "tpc_password"
+}
