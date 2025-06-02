@@ -13,7 +13,7 @@ async function executeSimpleTransaction(transactionType: string, clientId: numbe
         // 简化的新订单事务 - 只查询客户信息
         result = await sql`
           SELECT c_custkey, c_name, c_acctbal 
-          FROM customer 
+          FROM tpc.customer 
           WHERE c_custkey = ${Math.floor(Math.random() * 1000) + 1}
           LIMIT 1
         `
@@ -23,7 +23,7 @@ async function executeSimpleTransaction(transactionType: string, clientId: numbe
         // 简化的付款事务 - 查询客户余额
         result = await sql`
           SELECT c_custkey, c_name, c_acctbal 
-          FROM customer 
+          FROM tpc.customer 
           WHERE c_acctbal > ${Math.random() * 1000}
           LIMIT 1
         `
@@ -33,8 +33,8 @@ async function executeSimpleTransaction(transactionType: string, clientId: numbe
         // 订单状态查询
         result = await sql`
           SELECT o.o_orderkey, o.o_orderdate, o.o_orderstatus, c.c_name
-          FROM orders o
-          JOIN customer c ON o.o_custkey = c.c_custkey
+          FROM tpc.orders o
+          JOIN tpc.customer c ON o.o_custkey = c.c_custkey
           WHERE o.o_custkey = ${Math.floor(Math.random() * 1000) + 1}
           ORDER BY o.o_orderdate DESC
           LIMIT 3
@@ -45,7 +45,7 @@ async function executeSimpleTransaction(transactionType: string, clientId: numbe
         // 发货事务 - 查询待发货订单
         result = await sql`
           SELECT o_orderkey, o_orderdate, o_orderstatus
-          FROM orders 
+          FROM tpc.orders 
           WHERE o_orderstatus = 'O'
           LIMIT 5
         `
@@ -55,8 +55,8 @@ async function executeSimpleTransaction(transactionType: string, clientId: numbe
         // 库存水平查询
         result = await sql`
           SELECT p.p_partkey, p.p_name, ps.ps_availqty
-          FROM part p
-          JOIN partsupp ps ON p.p_partkey = ps.ps_partkey
+          FROM tpc.part p
+          JOIN tpc.partsupp ps ON p.p_partkey = ps.ps_partkey
           WHERE ps.ps_availqty < ${Math.floor(Math.random() * 100) + 50}
           LIMIT 10
         `

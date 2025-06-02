@@ -14,8 +14,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 
 interface ConcurrentTest {
   id: string
-  clientId: number
-  queryType: string
+  queryId: string
+  name: string
   status: "waiting" | "running" | "completed" | "failed"
   startTime?: number
   endTime?: number
@@ -41,7 +41,7 @@ export default function TPCHConcurrentPage() {
   const testStartTime = useRef<number>(0)
   const testInterval = useRef<NodeJS.Timeout | null>(null)
 
-  const startConcurrentTest = () => {
+  const startConcurrentTest = async () => {
     setIsRunning(true)
     setProgress(0)
     setConcurrentTests([])
@@ -52,164 +52,59 @@ export default function TPCHConcurrentPage() {
     setErrorRate(0)
     testStartTime.current = Date.now()
 
-    // 初始化并发测试
-    const tests: ConcurrentTest[] = []
-    for (let i = 1; i <= clientCount; i++) {
-      tests.push({
-        id: `client-${i}`,
-        clientId: i,
-        queryType: queryMix === "mixed" ? queryTypes[Math.floor(Math.random() * queryTypes.length)] : queryMix,
-        status: "waiting",
-      })
-    }
-    setConcurrentTests(tests)
-
-    // 开始执行测试
-    executeRealConcurrentTest(tests)
-  }
-
-  const executeRealConcurrentTest = async (initialTests: ConcurrentTest[]) => {
-    const totalDuration = testDuration * 1000
-    let completedQueries = 0
-    let failedQueries = 0
-    let totalResponseTime = 0
-    const performanceHistory: any[] = []
-
-    // 更新进度的定时器
-    testInterval.current = setInterval(() => {
-      const elapsed = Date.now() - testStartTime.current
-      const progressPercent = Math.min((elapsed / totalDuration) * 100, 100)
-      setProgress(progressPercent)
-
-      if (elapsed >= totalDuration) {
-        stopTest()
-      }
-    }, 1000)
-
-    // 执行并发查询
-    const executeQuery = async (test: ConcurrentTest) => {
-      if (!isRunning) return
-
-      // 更新状态为运行中
-      setConcurrentTests((prev) =>
-        prev.map((t) => (t.id === test.id ? { ...t, status: "running", startTime: Date.now() } : t)),
-      )
-
-      try {
-        const response = await fetch("/api/tpc-h-concurrent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            queryType: test.queryType,
-            clientId: test.clientId,
-          }),
+    try {
+      const response = await fetch("http://localhost:8000/api/tpch/concurrent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          queryIds: queryMix === "mixed" ? queryTypes : [queryMix],
+          concurrency: clientCount,
+          duration: testDuration,
+          params: {
+            Q3: ["BUILDING", "1995-03-15"],
+            Q5: ["ASIA", "1994-01-01", "1995-01-01"]
+          }
         })
+      })
 
-        const result = await response.json()
-        const endTime = Date.now()
-        const duration = endTime - (test.startTime || endTime)
-
-        if (result.success) {
-          completedQueries++
-          totalResponseTime += result.executionTime
-
-          setConcurrentTests((prev) =>
-            prev.map((t) =>
-              t.id === test.id
-                ? {
-                    ...t,
-                    status: "completed",
-                    endTime,
-                    duration: result.executionTime,
-                    rowCount: result.rowCount,
-                  }
-                : t,
-            ),
-          )
-        } else {
-          failedQueries++
-          setConcurrentTests((prev) =>
-            prev.map((t) =>
-              t.id === test.id
-                ? {
-                    ...t,
-                    status: "failed",
-                    endTime,
-                    duration,
-                    error: result.error,
-                  }
-                : t,
-            ),
-          )
-        }
-
+      const result = await response.json()
+      
+      if (result.success) {
         // 更新性能指标
-        const totalExecuted = completedQueries + failedQueries
-        if (totalExecuted > 0) {
-          const elapsed = (Date.now() - testStartTime.current) / 1000
-          const currentThroughput = completedQueries / elapsed
-          const currentAvgResponse = completedQueries > 0 ? totalResponseTime / completedQueries : 0
-          const currentErrorRate = (failedQueries / totalExecuted) * 100
+        setTotalQueries(result.summary.totalQueries)
+        setAvgResponseTime(result.summary.avgResponseTime)
+        setThroughput(result.summary.throughput)
+        setErrorRate(result.summary.errorRate)
 
-          setTotalQueries(totalExecuted)
-          setAvgResponseTime(currentAvgResponse)
-          setThroughput(currentThroughput)
-          setErrorRate(currentErrorRate)
+        // 更新测试结果
+        const tests = result.results.map((r: any, index: number) => ({
+          id: `test-${index}`,
+          queryId: r.queryId,
+          name: r.name,
+          status: r.success ? "completed" : "failed",
+          duration: r.executionTime,
+          rowCount: r.rowCount,
+          error: r.error
+        }))
+        setConcurrentTests(tests)
 
-          // 记录性能历史
-          performanceHistory.push({
-            time: Math.floor(elapsed),
-            throughput: currentThroughput,
-            responseTime: currentAvgResponse,
-            errorRate: currentErrorRate,
-            activeClients: concurrentTests.filter((t) => t.status === "running").length,
-          })
-          setPerformanceData([...performanceHistory])
-        }
-
-        // 如果测试还在进行，启动新的查询
-        if (isRunning && Date.now() - testStartTime.current < testDuration * 1000) {
-          setTimeout(
-            () => {
-              const newQueryType =
-                queryMix === "mixed" ? queryTypes[Math.floor(Math.random() * queryTypes.length)] : queryMix
-
-              executeQuery({
-                ...test,
-                queryType: newQueryType,
-                status: "waiting",
-                startTime: undefined,
-                endTime: undefined,
-                duration: undefined,
-              })
-            },
-            Math.random() * 2000 + 500,
-          ) // 随机延迟0.5-2.5秒
-        } else {
-          // 测试结束，设置为等待状态
-          setConcurrentTests((prev) => prev.map((t) => (t.id === test.id ? { ...t, status: "waiting" } : t)))
-        }
-      } catch (error) {
-        failedQueries++
-        setConcurrentTests((prev) =>
-          prev.map((t) =>
-            t.id === test.id
-              ? {
-                  ...t,
-                  status: "failed",
-                  endTime: Date.now(),
-                  error: error instanceof Error ? error.message : String(error),
-                }
-              : t,
-          ),
-        )
+        // 更新性能数据
+        const performanceHistory = result.results.map((r: any) => ({
+          time: new Date(r.timestamp).getTime() - testStartTime.current,
+          throughput: result.summary.throughput,
+          responseTime: r.executionTime,
+          errorRate: result.summary.errorRate,
+          activeClients: clientCount
+        }))
+        setPerformanceData(performanceHistory)
+      } else {
+        console.error("测试执行失败:", result.error)
       }
+    } catch (error) {
+      console.error("测试执行出错:", error)
+    } finally {
+      setIsRunning(false)
     }
-
-    // 为每个客户端启动查询
-    initialTests.forEach((test) => {
-      setTimeout(() => executeQuery(test), Math.random() * 1000) // 随机启动延迟
-    })
   }
 
   const stopTest = () => {
@@ -445,8 +340,8 @@ export default function TPCHConcurrentPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>客户端ID</TableHead>
-                      <TableHead>查询类型</TableHead>
+                      <TableHead>查询ID</TableHead>
+                      <TableHead>查询名称</TableHead>
                       <TableHead>状态</TableHead>
                       <TableHead>执行时间</TableHead>
                       <TableHead>返回行数</TableHead>
@@ -455,8 +350,8 @@ export default function TPCHConcurrentPage() {
                   <TableBody>
                     {concurrentTests.map((test) => (
                       <TableRow key={test.id}>
-                        <TableCell>{test.clientId}</TableCell>
-                        <TableCell>{test.queryType}</TableCell>
+                        <TableCell>{test.queryId}</TableCell>
+                        <TableCell>{test.name}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -478,7 +373,7 @@ export default function TPCHConcurrentPage() {
                                   : "失败"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{test.duration ? `${test.duration}ms` : "-"}</TableCell>
+                        <TableCell>{test.duration ? `${test.duration.toFixed(1)}ms` : "-"}</TableCell>
                         <TableCell>{test.rowCount || "-"}</TableCell>
                       </TableRow>
                     ))}

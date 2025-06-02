@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Database, Search, BarChart3, Zap, Users, Package, Upload } from "lucide-react"
+import { TestConnectionButton } from "./components/TestConnectionButton"
 
 export default function HomePage() {
   const modules = [
@@ -64,6 +65,9 @@ export default function HomePage() {
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             完整的数据库基准测试系统，支持复杂查询、事务处理、性能分析和并发测试
           </p>
+          <div className="mt-4">
+            <TestConnectionButton />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

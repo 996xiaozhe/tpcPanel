@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { executeQueryWithTiming } from "@/lib/db"
+import { sql } from "@/lib/db"
 
 // TPC-H 标准查询定义
 const tpcHQueries = {
@@ -18,7 +18,7 @@ const tpcHQueries = {
         AVG(l_extendedprice) as avg_price,
         AVG(l_discount) as avg_disc,
         COUNT(*) as count_order
-      FROM lineitem
+      FROM tpc.lineitem
       WHERE l_shipdate <= DATE '1998-12-01' - INTERVAL '90 days'
       GROUP BY l_returnflag, l_linestatus
       ORDER BY l_returnflag, l_linestatus
@@ -33,14 +33,14 @@ const tpcHQueries = {
         SUM(l_extendedprice * (1 - l_discount)) as revenue,
         o_orderdate,
         o_shippriority
-      FROM customer c, orders o, lineitem l
-      WHERE c_mktsegment = 'BUILDING'
+      FROM tpc.customer c, tpc.orders o, tpc.lineitem l
+      WHERE c.c_mktsegment = 'BUILDING'
         AND c.c_custkey = o.o_custkey
         AND l.l_orderkey = o.o_orderkey
-        AND o_orderdate < DATE '1995-03-15'
-        AND l_shipdate > DATE '1995-03-15'
-      GROUP BY l_orderkey, o_orderdate, o_shippriority
-      ORDER BY revenue DESC, o_orderdate
+        AND o.o_orderdate < DATE '1995-03-15'
+        AND l.l_shipdate > DATE '1995-03-15'
+      GROUP BY l.l_orderkey, o.o_orderdate, o.o_shippriority
+      ORDER BY revenue DESC, o.o_orderdate
       LIMIT 10
     `,
   },
@@ -50,8 +50,8 @@ const tpcHQueries = {
     sql: `
       SELECT 
         n.n_name,
-        SUM(l_extendedprice * (1 - l_discount)) as revenue
-      FROM customer c, orders o, lineitem l, supplier s, nation n, region r
+        SUM(l.l_extendedprice * (1 - l.l_discount)) as revenue
+      FROM tpc.customer c, tpc.orders o, tpc.lineitem l, tpc.supplier s, tpc.nation n, tpc.region r
       WHERE c.c_custkey = o.o_custkey
         AND l.l_orderkey = o.o_orderkey
         AND l.l_suppkey = s.s_suppkey
@@ -59,8 +59,8 @@ const tpcHQueries = {
         AND s.s_nationkey = n.n_nationkey
         AND n.n_regionkey = r.r_regionkey
         AND r.r_name = 'ASIA'
-        AND o_orderdate >= DATE '1994-01-01'
-        AND o_orderdate < DATE '1995-01-01'
+        AND o.o_orderdate >= DATE '1994-01-01'
+        AND o.o_orderdate < DATE '1995-01-01'
       GROUP BY n.n_name
       ORDER BY revenue DESC
     `,
@@ -78,9 +78,9 @@ const tpcHQueries = {
         SELECT 
           n1.n_name as supp_nation,
           n2.n_name as cust_nation,
-          EXTRACT(year FROM l_shipdate) as l_year,
-          l_extendedprice * (1 - l_discount) as volume
-        FROM supplier s, lineitem l, orders o, customer c, nation n1, nation n2
+          EXTRACT(year FROM l.l_shipdate) as l_year,
+          l.l_extendedprice * (1 - l.l_discount) as volume
+        FROM tpc.supplier s, tpc.lineitem l, tpc.orders o, tpc.customer c, tpc.nation n1, tpc.nation n2
         WHERE s.s_suppkey = l.l_suppkey
           AND o.o_orderkey = l.l_orderkey
           AND c.c_custkey = o.o_custkey
@@ -88,7 +88,7 @@ const tpcHQueries = {
           AND c.c_nationkey = n2.n_nationkey
           AND ((n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY')
                OR (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE'))
-          AND l_shipdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+          AND l.l_shipdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
       ) as shipping
       GROUP BY supp_nation, cust_nation, l_year
       ORDER BY supp_nation, cust_nation, l_year
@@ -101,18 +101,18 @@ const tpcHQueries = {
       SELECT 
         c.c_custkey,
         c.c_name,
-        SUM(l_extendedprice * (1 - l_discount)) as revenue,
+        SUM(l.l_extendedprice * (1 - l.l_discount)) as revenue,
         c.c_acctbal,
         n.n_name,
         c.c_address,
         c.c_phone,
         c.c_comment
-      FROM customer c, orders o, lineitem l, nation n
+      FROM tpc.customer c, tpc.orders o, tpc.lineitem l, tpc.nation n
       WHERE c.c_custkey = o.o_custkey
         AND l.l_orderkey = o.o_orderkey
-        AND o_orderdate >= DATE '1993-10-01'
-        AND o_orderdate < DATE '1994-01-01'
-        AND l_returnflag = 'R'
+        AND o.o_orderdate >= DATE '1993-10-01'
+        AND o.o_orderdate < DATE '1994-01-01'
+        AND l.l_returnflag = 'R'
         AND c.c_nationkey = n.n_nationkey
       GROUP BY c.c_custkey, c.c_name, c.c_acctbal, c.c_phone, n.n_name, c.c_address, c.c_comment
       ORDER BY revenue DESC
@@ -130,38 +130,51 @@ export async function POST(request: NextRequest) {
     }
 
     const query = tpcHQueries[queryId as keyof typeof tpcHQueries]
-    let sql = query.sql
+    let sqlQuery = query.sql
 
     // 根据参数替换查询中的值
     if (parameters) {
       if (parameters.region && queryId === "Q5") {
-        sql = sql.replace("'ASIA'", `'${parameters.region}'`)
+        sqlQuery = sqlQuery.replace("'ASIA'", `'${parameters.region}'`)
       }
       if (parameters.segment && queryId === "Q3") {
-        sql = sql.replace("'BUILDING'", `'${parameters.segment}'`)
+        sqlQuery = sqlQuery.replace("'BUILDING'", `'${parameters.segment}'`)
       }
       if (parameters.nation1 && parameters.nation2 && queryId === "Q7") {
-        sql = sql.replace("'FRANCE'", `'${parameters.nation1}'`)
-        sql = sql.replace("'GERMANY'", `'${parameters.nation2}'`)
+        sqlQuery = sqlQuery.replace("'FRANCE'", `'${parameters.nation1}'`)
+        sqlQuery = sqlQuery.replace("'GERMANY'", `'${parameters.nation2}'`)
       }
     }
 
-    const result = await executeQueryWithTiming(sql)
+    const startTime = Date.now()
+    const result = await sql.query(sqlQuery, [])
+    const executionTime = Date.now() - startTime
 
-    if (result.success) {
-      return NextResponse.json({
-        data: result.data,
-        executionTime: result.executionTime,
-        queryInfo: {
-          name: query.name,
-          description: query.description,
-          sql: sql,
-        },
-      })
-    } else {
-      return NextResponse.json({ error: result.error }, { status: 500 })
+    // 添加日志
+    console.log('SQL查询结果:', {
+      rows: result.rows,
+      rowCount: result.rowCount,
+      fields: result.fields
+    })
+
+    // 确保返回的数据格式正确
+    const rows = result.rows || []
+    
+    const response = {
+      data: rows,
+      executionTime,
+      queryInfo: {
+        name: query.name,
+        description: query.description,
+        sql: sqlQuery,
+      },
     }
+
+    console.log('API响应:', response)
+    
+    return NextResponse.json(response)
   } catch (error) {
+    console.error("TPC-H查询执行错误:", error)
     return NextResponse.json(
       {
         error: `查询执行错误: ${error instanceof Error ? error.message : String(error)}`,

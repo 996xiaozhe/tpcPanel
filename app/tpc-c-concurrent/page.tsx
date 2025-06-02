@@ -8,251 +8,141 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Download, Play, CircleStopIcon as Stop, ArrowLeft, Users, Clock, Database } from "lucide-react"
+import { Download, Play, CircleStopIcon as Stop, ArrowLeft, Users, Clock, TrendingUp } from "lucide-react"
 import Link from "next/link"
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 
-interface ConcurrentTransaction {
+interface ConcurrentTest {
   id: string
-  clientId: number
   transactionType: string
-  status: "waiting" | "running" | "committed" | "aborted"
+  status: "waiting" | "running" | "completed" | "failed"
   startTime?: number
   endTime?: number
   duration?: number
-  operations: number
   error?: string
 }
 
 export default function TPCCConcurrentPage() {
-  const [clientCount, setClientCount] = useState(10)
-  const [transactionMix, setTransactionMix] = useState("standard")
-  const [testDuration, setTestDuration] = useState(120)
+  const [clientCount, setClientCount] = useState(5)
+  const [transactionMix, setTransactionMix] = useState("mixed")
+  const [testDuration, setTestDuration] = useState(60)
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [concurrentTransactions, setConcurrentTransactions] = useState<ConcurrentTransaction[]>([])
+  const [concurrentTests, setConcurrentTests] = useState<ConcurrentTest[]>([])
   const [performanceData, setPerformanceData] = useState<any[]>([])
   const [totalTransactions, setTotalTransactions] = useState(0)
   const [avgResponseTime, setAvgResponseTime] = useState(0)
-  const [tpmC, setTpmC] = useState(0) // Transactions per minute C
-  const [abortRate, setAbortRate] = useState(0)
+  const [throughput, setThroughput] = useState(0)
+  const [errorRate, setErrorRate] = useState(0)
 
-  const transactionTypes = ["NEW_ORDER", "PAYMENT", "ORDER_STATUS", "DELIVERY", "STOCK_LEVEL"]
-  const standardMix = {
-    NEW_ORDER: 0.45,
-    PAYMENT: 0.43,
-    ORDER_STATUS: 0.04,
-    DELIVERY: 0.04,
-    STOCK_LEVEL: 0.04,
-  }
-
+  const transactionTypes = ["NEW_ORDER", "PAYMENT", "DELIVERY", "ORDER_STATUS", "STOCK_LEVEL"]
   const testStartTime = useRef<number>(0)
   const testInterval = useRef<NodeJS.Timeout | null>(null)
 
-  const getRandomTransactionType = () => {
-    if (transactionMix === "standard") {
-      const rand = Math.random()
-      let cumulative = 0
-      for (const [type, probability] of Object.entries(standardMix)) {
-        cumulative += probability
-        if (rand <= cumulative) return type
-      }
-    }
-    return transactionTypes[Math.floor(Math.random() * transactionTypes.length)]
-  }
-
-  const startConcurrentTest = () => {
+  const startConcurrentTest = async () => {
     setIsRunning(true)
     setProgress(0)
-    setConcurrentTransactions([])
+    setConcurrentTests([])
     setPerformanceData([])
     setTotalTransactions(0)
     setAvgResponseTime(0)
-    setTpmC(0)
-    setAbortRate(0)
+    setThroughput(0)
+    setErrorRate(0)
     testStartTime.current = Date.now()
 
-    // 初始化并发事务
-    const transactions: ConcurrentTransaction[] = []
-    for (let i = 1; i <= clientCount; i++) {
-      transactions.push({
-        id: `client-${i}`,
-        clientId: i,
-        transactionType: getRandomTransactionType(),
-        status: "waiting",
-        operations: 0,
-      })
-    }
-    setConcurrentTransactions(transactions)
-
-    // 开始执行测试
-    executeRealConcurrentTransactions(transactions)
-  }
-
-  const executeRealConcurrentTransactions = async (initialTransactions: ConcurrentTransaction[]) => {
-    const totalDuration = testDuration * 1000
-    let completedTransactions = 0
-    let abortedTransactions = 0
-    let totalResponseTime = 0
-    const performanceHistory: any[] = []
-
-    // 更新进度的定时器
-    testInterval.current = setInterval(() => {
-      const elapsed = Date.now() - testStartTime.current
-      const progressPercent = Math.min((elapsed / totalDuration) * 100, 100)
-      setProgress(progressPercent)
-
-      if (elapsed >= totalDuration) {
-        stopTest()
-      }
-    }, 1000)
-
-    // 执行并发事务
-    const executeTransaction = async (transaction: ConcurrentTransaction) => {
-      if (!isRunning) return
-
-      // 更新状态为运行中
-      setConcurrentTransactions((prev) =>
-        prev.map((t) =>
-          t.id === transaction.id
-            ? {
-                ...t,
-                status: "running",
-                startTime: Date.now(),
-                operations: Math.floor(Math.random() * 5) + 1,
-              }
-            : t,
-        ),
-      )
-
-      try {
-        const response = await fetch("/api/tpc-c-concurrent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transactionType: transaction.transactionType,
-            clientId: transaction.clientId,
-          }),
-        })
-
-        const result = await response.json()
-        const endTime = Date.now()
-
-        if (result.success) {
-          completedTransactions++
-          totalResponseTime += result.executionTime
-
-          setConcurrentTransactions((prev) =>
-            prev.map((t) =>
-              t.id === transaction.id
-                ? {
-                    ...t,
-                    status: "committed",
-                    endTime,
-                    duration: result.executionTime,
-                    operations: result.operations,
-                  }
-                : t,
-            ),
-          )
-        } else {
-          abortedTransactions++
-          setConcurrentTransactions((prev) =>
-            prev.map((t) =>
-              t.id === transaction.id
-                ? {
-                    ...t,
-                    status: "aborted",
-                    endTime,
-                    duration: result.executionTime || endTime - (transaction.startTime || endTime),
-                    error: result.error,
-                  }
-                : t,
-            ),
-          )
-        }
-
-        // 更新性能指标
-        const totalExecuted = completedTransactions + abortedTransactions
-        if (totalExecuted > 0) {
-          const elapsed = (Date.now() - testStartTime.current) / 1000
-          const currentTpmC = (completedTransactions / elapsed) * 60
-          const currentAvgResponse = completedTransactions > 0 ? totalResponseTime / completedTransactions : 0
-          const currentAbortRate = (abortedTransactions / totalExecuted) * 100
-
-          setTotalTransactions(totalExecuted)
-          setAvgResponseTime(currentAvgResponse)
-          setTpmC(currentTpmC)
-          setAbortRate(currentAbortRate)
-
-          // 记录性能历史
-          performanceHistory.push({
-            time: Math.floor(elapsed),
-            tpmC: currentTpmC,
-            responseTime: currentAvgResponse,
-            abortRate: currentAbortRate,
-            activeTransactions: concurrentTransactions.filter((t) => t.status === "running").length,
-            throughput: (totalExecuted / elapsed).toFixed(2),
-          })
-          setPerformanceData([...performanceHistory])
-        }
-
-        // 如果测试还在进行，启动新的事务
-        if (isRunning && Date.now() - testStartTime.current < testDuration * 1000) {
-          setTimeout(
-            () => {
-              const newTransactionType = getRandomTransactionType()
-
-              executeTransaction({
-                ...transaction,
-                transactionType: newTransactionType,
-                status: "waiting",
-                startTime: undefined,
-                endTime: undefined,
-                duration: undefined,
-                operations: 0,
-              })
+    try {
+      const response = await fetch("http://localhost:8000/api/tpcc/concurrent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_types: transactionMix === "mixed" ? transactionTypes : [transactionMix],
+          concurrency: clientCount,
+          duration: testDuration,
+          params: {
+            NEW_ORDER: {
+              w_id: 1,
+              d_id: 1,
+              c_id: 1,
+              items: Array.from({ length: Math.floor(Math.random() * 11) + 5 }, () => ({
+                i_id: Math.floor(Math.random() * 100) + 1,
+                quantity: Math.floor(Math.random() * 10) + 1
+              }))
             },
-            Math.random() * 1000 + 200,
-          ) // 随机延迟0.2-1.2秒
-        } else {
-          // 测试结束，设置为等待状态
-          setConcurrentTransactions((prev) =>
-            prev.map((t) => (t.id === transaction.id ? { ...t, status: "waiting" } : t)),
-          )
-        }
-      } catch (error) {
-        abortedTransactions++
-        setConcurrentTransactions((prev) =>
-          prev.map((t) =>
-            t.id === transaction.id
-              ? {
-                  ...t,
-                  status: "aborted",
-                  endTime: Date.now(),
-                  error: error instanceof Error ? error.message : String(error),
-                }
-              : t,
-          ),
-        )
-      }
-    }
+            PAYMENT: {
+              w_id: 1,
+              d_id: 1,
+              c_id: Math.floor(Math.random() * 100) + 1,
+              amount: Number((Math.random() * 5000).toFixed(2)),
+              payment_date: new Date().toISOString()
+            },
+            DELIVERY: {
+              w_id: 1,
+              d_id: 1,
+              o_id: Math.floor(Math.random() * 100) + 1,
+              carrier_id: Math.floor(Math.random() * 10) + 1,
+              delivery_date: new Date().toISOString()
+            },
+            ORDER_STATUS: {
+              w_id: 1,
+              d_id: 1,
+              c_id: 1
+            },
+            STOCK_LEVEL: {
+              w_id: 1,
+              d_id: 1,
+              threshold: 10
+            }
+          }
+        })
+      })
 
-    // 为每个客户端启动事务
-    initialTransactions.forEach((transaction) => {
-      setTimeout(() => executeTransaction(transaction), Math.random() * 500) // 随机启动延迟
-    })
+      const result = await response.json()
+      
+      if (result.success) {
+        // 更新性能指标
+        setTotalTransactions(result.summary.totalTransactions)
+        setAvgResponseTime(result.summary.avgResponseTime)
+        setThroughput(result.summary.throughput)
+        setErrorRate(result.summary.errorRate)
+
+        // 更新测试结果
+        const tests = result.results.map((r: any, index: number) => ({
+          id: `test-${index}`,
+          transactionType: r.transaction_type,
+          status: r.success ? "completed" : "failed",
+          duration: r.executionTime,
+          error: r.error || (r.transaction_type === "DELIVERY" && r.message ? r.message : "-")
+        }))
+        setConcurrentTests(tests)
+
+        // 更新性能数据
+        const performanceHistory = result.results.map((r: any) => ({
+          time: new Date(r.timestamp).getTime() - testStartTime.current,
+          throughput: result.summary.throughput,
+          responseTime: r.executionTime,
+          errorRate: result.summary.errorRate,
+          activeClients: clientCount
+        }))
+        setPerformanceData(performanceHistory)
+      } else {
+        // 即使整体测试失败，也显示已执行的事务结果
+        if (result.results && Array.isArray(result.results)) {
+          const tests = result.results.map((r: any, index: number) => ({
+            id: `test-${index}`,
+            transactionType: r.transaction_type,
+            status: r.success ? "completed" : "failed",
+            duration: r.executionTime,
+            error: r.error || (r.transaction_type === "DELIVERY" && r.message ? r.message : "-")
+          }))
+          setConcurrentTests(tests)
+        }
+        console.error("测试执行失败:", result.error)
+      }
+    } catch (error) {
+      console.error("测试执行出错:", error)
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   const stopTest = () => {
@@ -264,10 +154,10 @@ export default function TPCCConcurrentPage() {
 
   const exportResults = () => {
     const csvContent = [
-      "Time,TpmC,ResponseTime(ms),AbortRate(%),ActiveTransactions,Throughput(TPS)",
+      "Time,Throughput(TPS),AvgResponseTime(ms),ErrorRate(%),ActiveClients",
       ...performanceData.map(
         (data) =>
-          `${data.time},${data.tpmC.toFixed(2)},${data.responseTime.toFixed(2)},${data.abortRate.toFixed(2)},${data.activeTransactions},${data.throughput}`,
+          `${data.time},${data.throughput.toFixed(2)},${data.responseTime.toFixed(2)},${data.errorRate.toFixed(2)},${data.activeClients}`,
       ),
     ].join("\n")
 
@@ -292,15 +182,15 @@ export default function TPCCConcurrentPage() {
               返回主页
             </Button>
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900">TPC-C 并发事务测试</h1>
+          <h1 className="text-3xl font-bold text-gray-900">TPC-C 并发测试</h1>
           <p className="text-gray-600 mt-2">真实数据库多客户端并发事务性能测试</p>
         </div>
 
         {/* 测试配置 */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle>并发事务测试配置</CardTitle>
-            <CardDescription>设置并发客户端数量、事务混合类型和测试时长</CardDescription>
+            <CardTitle>并发测试配置</CardTitle>
+            <CardDescription>设置并发客户端数量、事务类型和测试时长</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -311,21 +201,23 @@ export default function TPCCConcurrentPage() {
                   value={clientCount}
                   onChange={(e) => setClientCount(Number.parseInt(e.target.value) || 1)}
                   min="1"
-                  max="50"
+                  max="20"
                   disabled={isRunning}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">事务混合类型</label>
+                <label className="text-sm font-medium">事务类型</label>
                 <Select value={transactionMix} onValueChange={setTransactionMix} disabled={isRunning}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="standard">标准混合 (45% NEW_ORDER)</SelectItem>
-                    <SelectItem value="NEW_ORDER">仅新订单事务</SelectItem>
-                    <SelectItem value="PAYMENT">仅付款事务</SelectItem>
-                    <SelectItem value="random">随机混合</SelectItem>
+                    <SelectItem value="mixed">混合事务</SelectItem>
+                    <SelectItem value="NEW_ORDER">新订单</SelectItem>
+                    <SelectItem value="PAYMENT">支付</SelectItem>
+                    <SelectItem value="DELIVERY">发货</SelectItem>
+                    <SelectItem value="ORDER_STATUS">订单状态</SelectItem>
+                    <SelectItem value="STOCK_LEVEL">库存水平</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -334,9 +226,9 @@ export default function TPCCConcurrentPage() {
                 <Input
                   type="number"
                   value={testDuration}
-                  onChange={(e) => setTestDuration(Number.parseInt(e.target.value) || 120)}
-                  min="30"
-                  max="600"
+                  onChange={(e) => setTestDuration(Number.parseInt(e.target.value) || 60)}
+                  min="10"
+                  max="300"
                   disabled={isRunning}
                 />
               </div>
@@ -372,13 +264,13 @@ export default function TPCCConcurrentPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">TpmC</CardTitle>
+                <CardTitle className="text-sm">总事务数</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{tpmC.toFixed(0)}</div>
+                <div className="text-2xl font-bold">{totalTransactions}</div>
                 <div className="text-xs text-gray-500">
-                  <Database className="h-3 w-3 inline mr-1" />
-                  事务/分钟
+                  <Users className="h-3 w-3 inline mr-1" />
+                  {clientCount} 个客户端
                 </div>
               </CardContent>
             </Card>
@@ -398,24 +290,24 @@ export default function TPCCConcurrentPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">中止率</CardTitle>
+                <CardTitle className="text-sm">吞吐量</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{abortRate.toFixed(1)}%</div>
-                <div className="text-xs text-gray-500">事务中止百分比</div>
+                <div className="text-2xl font-bold">{throughput.toFixed(2)}</div>
+                <div className="text-xs text-gray-500">
+                  <TrendingUp className="h-3 w-3 inline mr-1" />
+                  TPS (事务/秒)
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">总事务数</CardTitle>
+                <CardTitle className="text-sm">错误率</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{totalTransactions}</div>
-                <div className="text-xs text-gray-500">
-                  <Users className="h-3 w-3 inline mr-1" />
-                  {clientCount} 个客户端
-                </div>
+                <div className="text-2xl font-bold">{errorRate.toFixed(1)}%</div>
+                <div className="text-xs text-gray-500">事务失败百分比</div>
               </CardContent>
             </Card>
           </div>
@@ -426,34 +318,27 @@ export default function TPCCConcurrentPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <Card>
               <CardHeader>
-                <CardTitle>TpmC 趋势</CardTitle>
-                <CardDescription>每分钟事务数 (Transactions per minute C)</CardDescription>
+                <CardTitle>吞吐量趋势</CardTitle>
+                <CardDescription>每秒事务数 (TPS)</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={performanceData}>
+                  <LineChart data={performanceData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" />
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Area
-                      type="monotone"
-                      dataKey="tpmC"
-                      stroke="#8884d8"
-                      fill="#8884d8"
-                      fillOpacity={0.6}
-                      name="TpmC"
-                    />
-                  </AreaChart>
+                    <Line type="monotone" dataKey="throughput" stroke="#8884d8" name="吞吐量 (TPS)" />
+                  </LineChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>响应时间与中止率</CardTitle>
-                <CardDescription>事务响应时间和中止率趋势</CardDescription>
+                <CardTitle>响应时间与错误率</CardTitle>
+                <CardDescription>平均响应时间和错误率趋势</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -465,7 +350,7 @@ export default function TPCCConcurrentPage() {
                     <Tooltip />
                     <Legend />
                     <Line yAxisId="left" type="monotone" dataKey="responseTime" stroke="#82ca9d" name="响应时间 (ms)" />
-                    <Line yAxisId="right" type="monotone" dataKey="abortRate" stroke="#ff7300" name="中止率 (%)" />
+                    <Line yAxisId="right" type="monotone" dataKey="errorRate" stroke="#ff7300" name="错误率 (%)" />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -473,14 +358,14 @@ export default function TPCCConcurrentPage() {
           </div>
         )}
 
-        {/* 事务状态 */}
-        {concurrentTransactions.length > 0 && (
+        {/* 客户端状态 */}
+        {concurrentTests.length > 0 && (
           <Card className="mb-8">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <div>
-                  <CardTitle>事务状态</CardTitle>
-                  <CardDescription>实时显示各客户端的事务执行状态</CardDescription>
+                  <CardTitle>客户端状态</CardTitle>
+                  <CardDescription>实时显示各客户端的执行状态</CardDescription>
                 </div>
                 {performanceData.length > 0 && (
                   <Button onClick={exportResults} variant="outline">
@@ -495,52 +380,43 @@ export default function TPCCConcurrentPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>客户端ID</TableHead>
                       <TableHead>事务类型</TableHead>
                       <TableHead>状态</TableHead>
-                      <TableHead>操作数</TableHead>
                       <TableHead>执行时间</TableHead>
+                      <TableHead>错误信息</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {concurrentTransactions.slice(0, 20).map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell>{transaction.clientId}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{transaction.transactionType}</Badge>
-                        </TableCell>
+                    {concurrentTests.map((test) => (
+                      <TableRow key={test.id}>
+                        <TableCell>{test.transactionType}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
-                              transaction.status === "committed"
+                              test.status === "completed"
                                 ? "default"
-                                : transaction.status === "running"
+                                : test.status === "running"
                                   ? "secondary"
-                                  : transaction.status === "aborted"
+                                  : test.status === "failed"
                                     ? "destructive"
                                     : "outline"
                             }
                           >
-                            {transaction.status === "waiting"
+                            {test.status === "waiting"
                               ? "等待"
-                              : transaction.status === "running"
+                              : test.status === "running"
                                 ? "执行中"
-                                : transaction.status === "committed"
-                                  ? "已提交"
-                                  : "已中止"}
+                                : test.status === "completed"
+                                  ? "完成"
+                                  : "失败"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{transaction.operations}</TableCell>
-                        <TableCell>{transaction.duration ? `${transaction.duration}ms` : "-"}</TableCell>
+                        <TableCell>{test.duration ? `${test.duration.toFixed(1)}ms` : "-"}</TableCell>
+                        <TableCell>{test.error || "-"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-                {concurrentTransactions.length > 20 && (
-                  <div className="text-center text-sm text-gray-500 mt-4">
-                    显示前20个客户端，共{concurrentTransactions.length}个
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>

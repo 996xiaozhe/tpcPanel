@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
           o.o_totalprice as total_price,
           o.o_orderpriority as priority,
           o.o_comment
-        FROM orders o
-        LEFT JOIN customer c ON o.o_custkey = c.c_custkey
+        FROM tpc.orders o
+        LEFT JOIN tpc.customer c ON o.o_custkey = c.c_custkey
         WHERE 1=1
       `
 
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
           p.p_container as container,
           p.p_retailprice as retail_price,
           p.p_mfgr as manufacturer
-        FROM part p
+        FROM tpc.part p
         WHERE 1=1
       `
 
@@ -67,17 +67,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "无效的查询类型" }, { status: 400 })
     }
 
+    console.log("执行查询:", query, "参数:", params)
+
     const result = await executeQueryWithTiming(query, params)
 
     if (result.success) {
+      const rows = result.data.rows || []
+      console.log("查询结果:", {
+        rowCount: rows.length,
+        firstRow: rows[0],
+        executionTime: result.executionTime
+      })
+
       return NextResponse.json({
-        data: result.data,
+        data: rows,
         executionTime: result.executionTime,
+        success: true
       })
     } else {
-      return NextResponse.json({ error: result.error }, { status: 500 })
+      console.error("查询失败:", result.error)
+      return NextResponse.json({ 
+        error: result.error,
+        success: false,
+        data: []
+      }, { status: 500 })
     }
   } catch (error) {
+    console.error("查询异常:", error)
     return NextResponse.json(
       {
         error: `查询出错: ${error instanceof Error ? error.message : String(error)}`,

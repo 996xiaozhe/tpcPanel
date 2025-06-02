@@ -12,8 +12,8 @@ export async function GET(request: NextRequest) {
 
     let query = `
       SELECT c.*, n.n_name
-      FROM customer c
-      LEFT JOIN nation n ON c.c_nationkey = n.n_nationkey
+      FROM tpc.customer c
+      LEFT JOIN tpc.nation n ON c.c_nationkey = n.n_nationkey
       WHERE 1=1
     `
 

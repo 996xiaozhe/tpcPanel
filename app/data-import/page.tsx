@@ -219,38 +219,43 @@ export default function DataImportPage() {
         throw new Error("无法读取响应流")
       }
 
+      let buffer = "" // 用于存储未完成的数据块
+
       while (true) {
         const { done, value } = await reader.read()
 
-        if (done) break
+        if (done) {
+          // 处理最后可能剩余的数据
+          if (buffer.trim()) {
+            try {
+              const data = JSON.parse(buffer)
+              handleStreamData(data)
+            } catch (e) {
+              console.error("处理最后数据块时出错:", buffer, e)
+            }
+          }
+          break
+        }
 
         const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split("\n").filter((line) => line.trim())
+        buffer += chunk
+
+        // 按行分割并处理完整的数据块
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || "" // 保留最后一个可能不完整的行
 
         for (const line of lines) {
+          if (!line.trim()) continue
+
           try {
             const data = JSON.parse(line)
-
-            if (data.type === "progress") {
-              setProgress(data.data)
-
-              // 计算上传速度和预估时间
-              const elapsed = (Date.now() - startTimeRef.current) / 1000
-              const processedBytes = (data.data.processed / (file.size / (1024 * 1024))) * file.size // 估算
-              const speed = processedBytes / elapsed
-              setUploadSpeed(formatSpeed(speed))
-
-              const remainingBytes = file.size - processedBytes
-              const remainingTime = remainingBytes / speed
-              setEstimatedTime(formatTime(remainingTime))
-            } else if (data.type === "complete") {
-              setImportResult(data.data)
-              setIsUploading(false)
-            } else if (data.type === "error") {
-              throw new Error(data.data.error)
-            }
+            handleStreamData(data)
           } catch (parseError) {
-            console.error("解析响应数据失败:", parseError)
+            console.error("解析响应数据失败:", {
+              line,
+              error: parseError,
+              buffer: buffer.slice(0, 100) // 只显示前100个字符
+            })
           }
         }
       }
@@ -274,6 +279,28 @@ export default function DataImportPage() {
         })
       }
       setIsUploading(false)
+    }
+  }
+
+  // 处理流数据的辅助函数
+  const handleStreamData = (data: any) => {
+    if (data.type === "progress") {
+      setProgress(data.data)
+
+      // 计算上传速度和预估时间
+      const elapsed = (Date.now() - startTimeRef.current) / 1000
+      const processedBytes = (data.data.processed / (file?.size || 0)) * (file?.size || 0)
+      const speed = processedBytes / elapsed
+      setUploadSpeed(formatSpeed(speed))
+
+      const remainingBytes = (file?.size || 0) - processedBytes
+      const remainingTime = remainingBytes / speed
+      setEstimatedTime(formatTime(remainingTime))
+    } else if (data.type === "complete") {
+      setImportResult(data.data)
+      setIsUploading(false)
+    } else if (data.type === "error") {
+      throw new Error(data.data.error)
     }
   }
 

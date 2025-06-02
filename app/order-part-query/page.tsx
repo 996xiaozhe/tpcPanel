@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Download, Search, ArrowLeft, BarChart3 } from "lucide-react"
+import { Download, Search, ArrowLeft, BarChart3, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import {
   BarChart,
@@ -22,6 +22,7 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"]
 
@@ -33,9 +34,11 @@ export default function OrderPartQueryPage() {
   const [queryTime, setQueryTime] = useState<number | null>(null)
   const [showChart, setShowChart] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSearch = async () => {
     setIsLoading(true)
+    setError(null)
 
     try {
       const params = new URLSearchParams({
@@ -44,22 +47,36 @@ export default function OrderPartQueryPage() {
         status: statusFilter,
       })
 
+      console.log("发送查询请求:", {
+        type: queryType,
+        search: searchTerm,
+        status: statusFilter
+      })
+
       const response = await fetch(`/api/order-part-queries?${params}`)
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
       const result = await response.json()
+      console.log("收到查询结果:", result)
 
       if (result.error) {
         throw new Error(result.error)
+      }
+
+      if (!Array.isArray(result.data)) {
+        console.error("返回的数据格式不正确:", result)
+        throw new Error("返回的数据格式不正确")
       }
 
       setResults(result.data)
       setQueryTime(result.executionTime)
     } catch (error) {
       console.error("查询失败:", error)
+      setError(error instanceof Error ? error.message : "查询失败")
       setResults([])
       setQueryTime(null)
     } finally {
@@ -164,6 +181,13 @@ export default function OrderPartQueryPage() {
             <CardDescription>选择查询类型并设置筛选条件</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>错误</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Select value={queryType} onValueChange={(value: "order" | "part") => setQueryType(value)}>
                 <SelectTrigger>

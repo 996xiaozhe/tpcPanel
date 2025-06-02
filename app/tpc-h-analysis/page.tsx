@@ -11,8 +11,25 @@ import { Download, Play, ArrowLeft, Clock, Database } from "lucide-react"
 import Link from "next/link"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 
+interface QueryParameter {
+  name: string;
+  label: string;
+  type: string;
+  default: string;
+  options?: string[];
+}
+
+interface TPCQuery {
+  id: string;
+  name: string;
+  description: string;
+  complexity: string;
+  estimatedTime: string;
+  parameters: QueryParameter[];
+}
+
 // TPC-H 查询模板
-const tpcHQueries = [
+const tpcHQueries: TPCQuery[] = [
   {
     id: "Q1",
     name: "定价汇总报表查询",
@@ -84,6 +101,22 @@ const tpcHQueries = [
   },
 ]
 
+// 添加表头映射
+const columnMappings: Record<string, Record<string, string>> = {
+  Q1: {
+    l_returnflag: "退货标志",
+    l_linestatus: "线路状态",
+    sum_qty: "总数量",
+    sum_base_price: "总原价",
+    sum_disc_price: "折扣后总价",
+    sum_charge: "总收费",
+    avg_qty: "平均数量",
+    avg_price: "平均价格",
+    avg_disc: "平均折扣",
+    count_order: "订单数"
+  }
+}
+
 export default function TPCHAnalysisPage() {
   const [selectedQuery, setSelectedQuery] = useState("")
   const [isExecuting, setIsExecuting] = useState(false)
@@ -102,7 +135,7 @@ export default function TPCHAnalysisPage() {
     const startTime = Date.now()
 
     try {
-      const response = await fetch("/api/tpc-h-queries", {
+      const response = await fetch("http://localhost:8000/api/tpch/query", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -118,9 +151,15 @@ export default function TPCHAnalysisPage() {
       }
 
       const result = await response.json()
+      console.log("API Response:", result) // 添加调试日志
 
-      if (result.error) {
-        throw new Error(result.error)
+      if (!result.success) {
+        throw new Error(result.error || '查询执行失败')
+      }
+
+      // 验证数据格式
+      if (!Array.isArray(result.data)) {
+        throw new Error('返回的数据格式不正确')
       }
 
       setQueryResults(result.data)
@@ -130,19 +169,19 @@ export default function TPCHAnalysisPage() {
       // 生成执行计划信息
       setExecutionPlan(`
 查询执行分析:
-查询名称: ${result.queryInfo.name}
+查询名称: ${result.queryInfo?.name || '未知'}
 执行时间: ${result.executionTime}ms
 返回行数: ${result.data.length}
 
 SQL查询:
-${result.queryInfo.sql}
+${result.queryInfo?.sql || '无SQL信息'}
 
 性能指标:
-- 查询复杂度: ${selectedQueryConfig?.complexity}
-- 涉及表数: ${(result.queryInfo.sql.match(/FROM|JOIN/gi) || []).length}
-- 聚合函数: ${(result.queryInfo.sql.match(/SUM|AVG|COUNT|MAX|MIN/gi) || []).length}
-- 排序操作: ${result.queryInfo.sql.includes("ORDER BY") ? "是" : "否"}
-- 分组操作: ${result.queryInfo.sql.includes("GROUP BY") ? "是" : "否"}
+- 查询复杂度: ${result.queryInfo?.complexity || '未知'}
+- 涉及表数: ${(result.queryInfo?.sql?.match(/FROM|JOIN/gi) || []).length}
+- 聚合函数: ${(result.queryInfo?.sql?.match(/SUM|AVG|COUNT|MAX|MIN/gi) || []).length}
+- 排序操作: ${result.queryInfo?.sql?.includes("ORDER BY") ? "是" : "否"}
+- 分组操作: ${result.queryInfo?.sql?.includes("GROUP BY") ? "是" : "否"}
 
 数据库优化建议:
 - 确保相关字段有适当的索引
@@ -197,10 +236,17 @@ ${result.queryInfo.sql}
         name: `订单${row.l_orderkey}`,
         revenue: Number.parseFloat(row.revenue) / 1000, // 转换为千
       }))
+    } else if (selectedQuery === "Q7") {
+      return queryResults.slice(0, 10).map((row) => ({
+        name: `${row.supp_nation}-${row.cust_nation}`,
+        revenue: Number.parseFloat(row.revenue) / 1000000, // 转换为百万
+        year: row.l_year,
+      }))
     } else if (selectedQuery === "Q10") {
       return queryResults.slice(0, 10).map((row) => ({
         name: row.c_name.substring(0, 10),
         revenue: Number.parseFloat(row.revenue) / 1000, // 转换为千
+        balance: Number.parseFloat(row.c_acctbal),
       }))
     }
     return []
@@ -331,14 +377,18 @@ ${result.queryInfo.sql}
                     <TableHeader>
                       <TableRow>
                         {Object.keys(queryResults[0]).map((key) => (
-                          <TableHead key={key}>{key}</TableHead>
+                          <TableHead key={key}>
+                            {selectedQuery === "Q1" 
+                              ? columnMappings.Q1[key] || key 
+                              : key}
+                          </TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {queryResults.slice(0, 20).map((row, index) => (
                         <TableRow key={index}>
-                          {Object.values(row).map((value: any, i) => (
+                          {Object.entries(row).map(([key, value]: [string, any], i) => (
                             <TableCell key={i}>
                               {typeof value === "number"
                                 ? value > 1000
@@ -377,6 +427,8 @@ ${result.queryInfo.sql}
                       <Legend />
                       <Bar dataKey="revenue" fill="#8884d8" name="收入" />
                       {selectedQuery === "Q1" && <Bar dataKey="orders" fill="#82ca9d" name="订单数" />}
+                      {selectedQuery === "Q7" && <Bar dataKey="year" fill="#ffc658" name="年份" />}
+                      {selectedQuery === "Q10" && <Bar dataKey="balance" fill="#ff8042" name="账户余额" />}
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>

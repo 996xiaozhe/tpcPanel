@@ -10,7 +10,7 @@ const concurrentQueries = {
       COUNT(*) as count_order,
       SUM(l_quantity) as sum_qty,
       AVG(l_extendedprice) as avg_price
-    FROM lineitem
+    FROM tpc.lineitem
     WHERE l_shipdate <= DATE '1998-12-01' - INTERVAL '90 days'
     GROUP BY l_returnflag, l_linestatus
     ORDER BY l_returnflag, l_linestatus
@@ -21,7 +21,7 @@ const concurrentQueries = {
       l_orderkey,
       SUM(l_extendedprice * (1 - l_discount)) as revenue,
       o_orderdate
-    FROM customer c, orders o, lineitem l
+    FROM tpc.customer c, tpc.orders o, tpc.lineitem l
     WHERE c_mktsegment = 'BUILDING'
       AND c.c_custkey = o.o_custkey
       AND l.l_orderkey = o.o_orderkey
@@ -35,7 +35,7 @@ const concurrentQueries = {
     SELECT 
       n.n_name,
       SUM(l_extendedprice * (1 - l_discount)) as revenue
-    FROM customer c, orders o, lineitem l, supplier s, nation n, region r
+    FROM tpc.customer c, tpc.orders o, tpc.lineitem l, tpc.supplier s, tpc.nation n, tpc.region r
     WHERE c.c_custkey = o.o_custkey
       AND l.l_orderkey = o.o_orderkey
       AND l.l_suppkey = s.s_suppkey
