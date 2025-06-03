@@ -22,6 +22,13 @@ interface ImportProgress {
     reason: string
     data: string
   }>
+  fileSize?: number
+  fileHash?: string
+}
+
+interface FileInfo {
+  size: number
+  hash: string
 }
 
 interface ImportResult {
@@ -46,6 +53,7 @@ export default function DataImportPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [previewData, setPreviewData] = useState<string>("")
   const [totalRows, setTotalRows] = useState<number>(0)
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -286,12 +294,22 @@ export default function DataImportPage() {
 
   // 处理流数据的辅助函数
   const handleStreamData = (data: any) => {
-    if (data.type === "progress") {
+    if (data.type === "fileInfo") {
+      setFileInfo(data.data)
+    } else if (data.type === "progress") {
       setProgress(data.data)
+      // 输出文件信息
+      if (data.data.fileSize && data.data.fileHash) {
+        console.log('文件信息:', {
+          size: data.data.fileSize,
+          hash: data.data.fileHash
+        })
+      }
     } else if (data.type === "complete") {
       setImportResult(data.data)
       setIsUploading(false)
     } else if (data.type === "error") {
+      console.error('导入错误:', data.data)
       throw new Error(data.data.error)
     }
   }
@@ -485,6 +503,13 @@ export default function DataImportPage() {
                       </div>
                       <Progress value={getProgressPercentage()} />
                     </div>
+
+                    {progress.fileSize && (
+                      <div className="text-sm text-gray-500">
+                        <div>文件大小: {formatFileSize(progress.fileSize)}</div>
+                        {progress.fileHash && <div>文件哈希: {progress.fileHash}</div>}
+                      </div>
+                    )}
 
                     {progress.errors.length > 0 && (
                       <div className="max-h-40 overflow-y-auto">

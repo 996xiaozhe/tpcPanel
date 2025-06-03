@@ -52,6 +52,13 @@ export default function TPCHConcurrentPage() {
     setErrorRate(0)
     testStartTime.current = Date.now()
 
+    // 启动进度条更新
+    testInterval.current = setInterval(() => {
+      const elapsed = (Date.now() - testStartTime.current) / 1000
+      const newProgress = Math.min((elapsed / testDuration) * 100, 100)
+      setProgress(newProgress)
+    }, 100)
+
     try {
       const response = await fetch("http://localhost:8000/api/tpch/concurrent", {
         method: "POST",
@@ -61,8 +68,8 @@ export default function TPCHConcurrentPage() {
           concurrency: clientCount,
           duration: testDuration,
           params: {
-            Q3: ["BUILDING", "1995-03-15"],
-            Q5: ["ASIA", "1994-01-01", "1995-01-01"]
+            Q3: ["BUILDING"],
+            Q5: ["ASIA"]
           }
         })
       })
@@ -104,6 +111,9 @@ export default function TPCHConcurrentPage() {
       console.error("测试执行出错:", error)
     } finally {
       setIsRunning(false)
+      if (testInterval.current) {
+        clearInterval(testInterval.current)
+      }
     }
   }
 

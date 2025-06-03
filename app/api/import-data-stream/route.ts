@@ -32,8 +32,9 @@ const dataValidationRules = {
         return null
       },
       o_orderdate: (value: string) => {
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/
-        if (!dateRegex.test(value)) return "订单日期格式无效，应为YYYY-MM-DD"
+        // 更宽松的日期格式验证
+        const date = new Date(value)
+        if (isNaN(date.getTime())) return "订单日期格式无效"
         return null
       },
     },
@@ -262,7 +263,7 @@ async function processFileStream(
   delimiter: string,
   onProgress: (progress: { processed: number; imported: number; failed: number; errors: any[] }) => void,
 ) {
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8')
   const reader = fileStream.getReader()
 
   let buffer = ""
@@ -297,17 +298,53 @@ async function processFileStream(
       }
 
       // 将新数据添加到缓冲区
-      buffer += decoder.decode(value, { stream: true })
+      try {
+        buffer += decoder.decode(value, { stream: true })
+      } catch (error) {
+        console.error("解码错误:", error)
+        // 如果解码失败，尝试使用其他编码
+        const otherDecoders = [
+          new TextDecoder('latin1'),
+          new TextDecoder('gbk'),
+        ]
+        
+        for (const otherDecoder of otherDecoders) {
+          try {
+            buffer += otherDecoder.decode(value, { stream: true })
+            break
+          } catch (e) {
+            continue
+          }
+        }
+      }
 
       // 处理完整的行
       const lines = buffer.split("\n")
       buffer = lines.pop() || "" // 保留最后一个不完整的行
 
-      for (const line of lines) {
+      // 限制每次处理的批次数，避免内存占用过高
+      const maxLinesPerBatch = 30000
+      const linesToProcess = lines.slice(0, maxLinesPerBatch)
+      const remainingLines = lines.slice(maxLinesPerBatch)
+
+      for (const line of linesToProcess) {
         if (line.trim()) {
           await processLine(line.trim())
         }
       }
+
+      // 将剩余的行放回缓冲区
+      if (remainingLines.length > 0) {
+        buffer = remainingLines.join("\n") + (buffer ? "\n" + buffer : "")
+      }
+
+      // 每处理一批就报告进度
+      onProgress({
+        processed: processedRows,
+        imported: importedRows,
+        failed: failedRows,
+        errors: errors.slice(-10), // 只保留最近的10个错误
+      })
     }
   } catch (error) {
     console.error("流处理错误:", error)
@@ -322,13 +359,19 @@ async function processFileStream(
 
     // 验证字段数量
     if (values.length !== fields.length) {
-      errors.push({
-        line: lineNumber,
-        reason: `字段数量不匹配，期望 ${fields.length} 个字段，实际 ${values.length} 个字段`,
-        data: line.substring(0, 100) + (line.length > 100 ? "..." : ""),
-      })
-      failedRows++
-      return
+      // 如果字段数量不匹配，但最后一个字段是comment字段，则合并多余的字段
+      if (fields[fields.length - 1].includes('comment') && values.length > fields.length) {
+        const commentField = values.slice(fields.length - 1).join(delimiter)
+        values.splice(fields.length - 1, values.length - fields.length + 1, commentField)
+      } else {
+        errors.push({
+          line: lineNumber,
+          reason: `字段数量不匹配，期望 ${fields.length} 个字段，实际 ${values.length} 个字段`,
+          data: line.substring(0, 100) + (line.length > 100 ? "..." : ""),
+        })
+        failedRows++
+        return
+      }
     }
 
     // 验证每个字段
@@ -454,29 +497,60 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "不支持的表名" }, { status: 400 })
     }
 
+    // 计算文件MD5
+    const fileBuffer = await file.arrayBuffer()
+    const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+    console.log('文件信息:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      hash: fileHash
+    })
+
     // 创建响应流
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
         try {
           let lastProgress = { processed: 0, imported: 0, failed: 0, errors: [] }
+          let totalBytes = 0
 
           const result = await processFileStream(file.stream(), table, delimiter, (progress) => {
             lastProgress = progress
             // 发送进度更新
-            const progressData = JSON.stringify({ type: "progress", data: progress }) + "\n"
+            const progressData = JSON.stringify({ 
+              type: "progress", 
+              data: {
+                ...progress,
+                fileSize: file.size,
+                fileHash: fileHash
+              }
+            }) + "\n"
             controller.enqueue(encoder.encode(progressData))
           })
 
           // 发送最终结果
-          const finalData = JSON.stringify({ type: "complete", data: result }) + "\n"
+          const finalData = JSON.stringify({ 
+            type: "complete", 
+            data: {
+              ...result,
+              fileSize: file.size,
+              fileHash: fileHash
+            }
+          }) + "\n"
           controller.enqueue(encoder.encode(finalData))
         } catch (error) {
-          const errorData =
-            JSON.stringify({
-              type: "error",
-              data: { error: error instanceof Error ? error.message : String(error) },
-            }) + "\n"
+          const errorData = JSON.stringify({
+            type: "error",
+            data: { 
+              error: error instanceof Error ? error.message : String(error),
+              fileSize: file.size,
+              fileHash: fileHash
+            },
+          }) + "\n"
           controller.enqueue(encoder.encode(errorData))
         } finally {
           controller.close()

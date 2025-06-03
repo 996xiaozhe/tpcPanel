@@ -50,6 +50,13 @@ export default function TPCCConcurrentPage() {
     setErrorRate(0)
     testStartTime.current = Date.now()
 
+    // 启动进度条更新
+    testInterval.current = setInterval(() => {
+      const elapsed = (Date.now() - testStartTime.current) / 1000
+      const newProgress = Math.min((elapsed / testDuration) * 100, 100)
+      setProgress(newProgress)
+    }, 100)
+
     try {
       const response = await fetch("http://localhost:8000/api/tpcc/concurrent", {
         method: "POST",
@@ -142,6 +149,9 @@ export default function TPCCConcurrentPage() {
       console.error("测试执行出错:", error)
     } finally {
       setIsRunning(false)
+      if (testInterval.current) {
+        clearInterval(testInterval.current)
+      }
     }
   }
 

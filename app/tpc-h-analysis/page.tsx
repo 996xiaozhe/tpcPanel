@@ -44,15 +44,7 @@ const tpcHQueries: TPCQuery[] = [
     description: "获取指定市场细分的客户在指定日期之前的订单收入",
     complexity: "高",
     estimatedTime: "3-8s",
-    parameters: [
-      {
-        name: "segment",
-        label: "市场细分",
-        type: "select",
-        options: ["BUILDING", "AUTOMOBILE", "MACHINERY", "HOUSEHOLD", "FURNITURE"],
-        default: "BUILDING",
-      },
-    ],
+    parameters: [],
   },
   {
     id: "Q5",
@@ -60,43 +52,6 @@ const tpcHQueries: TPCQuery[] = [
     description: "列出指定地区在指定年份的收入",
     complexity: "高",
     estimatedTime: "4-10s",
-    parameters: [
-      {
-        name: "region",
-        label: "地区",
-        type: "select",
-        options: ["ASIA", "AMERICA", "EUROPE", "MIDDLE EAST", "AFRICA"],
-        default: "ASIA",
-      },
-    ],
-  },
-  {
-    id: "Q7",
-    name: "销量查询",
-    description: "两个国家之间的贸易量",
-    complexity: "高",
-    estimatedTime: "5-12s",
-    parameters: [
-      {
-        name: "nation1",
-        label: "国家1",
-        type: "input",
-        default: "FRANCE",
-      },
-      {
-        name: "nation2",
-        label: "国家2",
-        type: "input",
-        default: "GERMANY",
-      },
-    ],
-  },
-  {
-    id: "Q10",
-    name: "退货客户查询",
-    description: "分析退货客户的损失",
-    complexity: "中等",
-    estimatedTime: "2-6s",
     parameters: [],
   },
 ]
@@ -176,12 +131,6 @@ export default function TPCHAnalysisPage() {
 SQL查询:
 ${result.queryInfo?.sql || '无SQL信息'}
 
-性能指标:
-- 查询复杂度: ${result.queryInfo?.complexity || '未知'}
-- 涉及表数: ${(result.queryInfo?.sql?.match(/FROM|JOIN/gi) || []).length}
-- 聚合函数: ${(result.queryInfo?.sql?.match(/SUM|AVG|COUNT|MAX|MIN/gi) || []).length}
-- 排序操作: ${result.queryInfo?.sql?.includes("ORDER BY") ? "是" : "否"}
-- 分组操作: ${result.queryInfo?.sql?.includes("GROUP BY") ? "是" : "否"}
 
 数据库优化建议:
 - 确保相关字段有适当的索引
@@ -235,18 +184,6 @@ ${result.queryInfo?.sql || '无SQL信息'}
       return queryResults.slice(0, 10).map((row) => ({
         name: `订单${row.l_orderkey}`,
         revenue: Number.parseFloat(row.revenue) / 1000, // 转换为千
-      }))
-    } else if (selectedQuery === "Q7") {
-      return queryResults.slice(0, 10).map((row) => ({
-        name: `${row.supp_nation}-${row.cust_nation}`,
-        revenue: Number.parseFloat(row.revenue) / 1000000, // 转换为百万
-        year: row.l_year,
-      }))
-    } else if (selectedQuery === "Q10") {
-      return queryResults.slice(0, 10).map((row) => ({
-        name: row.c_name.substring(0, 10),
-        revenue: Number.parseFloat(row.revenue) / 1000, // 转换为千
-        balance: Number.parseFloat(row.c_acctbal),
       }))
     }
     return []
@@ -427,8 +364,6 @@ ${result.queryInfo?.sql || '无SQL信息'}
                       <Legend />
                       <Bar dataKey="revenue" fill="#8884d8" name="收入" />
                       {selectedQuery === "Q1" && <Bar dataKey="orders" fill="#82ca9d" name="订单数" />}
-                      {selectedQuery === "Q7" && <Bar dataKey="year" fill="#ffc658" name="年份" />}
-                      {selectedQuery === "Q10" && <Bar dataKey="balance" fill="#ff8042" name="账户余额" />}
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>

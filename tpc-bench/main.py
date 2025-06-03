@@ -85,8 +85,8 @@ TPC_H_QUERIES = {
         WHERE c.c_mktsegment = $1
             AND c.c_custkey = o.o_custkey
             AND l.l_orderkey = o.o_orderkey
-            AND o.o_orderdate < $2
-            AND l.l_shipdate > $2
+            AND o.o_orderdate < DATE '1995-03-15'
+            AND l.l_shipdate > o.o_orderdate
         GROUP BY l.l_orderkey, o.o_orderdate, o.o_shippriority
         ORDER BY revenue DESC, o.o_orderdate
         LIMIT 10
@@ -118,8 +118,8 @@ TPC_H_QUERIES = {
             AND s.s_nationkey = n.n_nationkey
             AND n.n_regionkey = r.r_regionkey
             AND r.r_name = $1
-            AND o.o_orderdate >= $2
-            AND o.o_orderdate < $3
+            AND o.o_orderdate >= DATE '1994-01-01'
+            AND o.o_orderdate < DATE '1995-01-01'
         GROUP BY n.n_name
         ORDER BY revenue DESC
         """
@@ -201,8 +201,8 @@ TPC_H_QUERIES = {
 
 # 查询参数默认值
 DEFAULT_PARAMS = {
-    "Q3": ["BUILDING", "1995-03-15"],
-    "Q5": ["ASIA", "1994-01-01", "1995-01-01"],
+    "Q3": ["BUILDING"],
+    "Q5": ["ASIA"],
     "Q7": ["FRANCE", "GERMANY"]
 }
 

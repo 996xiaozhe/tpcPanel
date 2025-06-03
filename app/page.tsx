@@ -1,11 +1,10 @@
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Database, Search, BarChart3, Zap, Users, Package, Upload, LayoutDashboard } from "lucide-react"
+import { Database, Search, BarChart3, Zap, Users, Package, Upload, LayoutDashboard, FileText, Download } from "lucide-react"
 
 export default function HomePage() {
   const modules = [
-
     {
       title: "客户信息查询",
       description: "支持输入框和下拉列表查询客户信息",
@@ -54,12 +53,28 @@ export default function HomePage() {
       icon: <Upload className="h-8 w-8" />,
       href: "/data-import",
       color: "bg-teal-500",
-    } ,   {
+    },
+    {
+      title: "数据导出",
+      description: "支持多表导出，可选择CSV或TXT格式",
+      icon: <Download className="h-8 w-8" />,
+      href: "/data-export",
+      color: "bg-cyan-500",
+    },
+    {
       title: "仪表板",
       description: "查看系统概览和管理员功能",
       icon: <LayoutDashboard className="h-8 w-8" />,
       href: "/dashboard",
       color: "bg-yellow-500",
+    },
+    {
+      title: "API文档",
+      description: "查看API接口文档和测试",
+      icon: <FileText className="h-8 w-8" />,
+      href: "http://localhost:8000/docs",
+      color: "bg-pink-500",
+      external: true
     }
   ]
 
@@ -86,9 +101,15 @@ export default function HomePage() {
                 <CardDescription className="text-gray-600">{module.description}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href={module.href}>
-                  <Button className="w-full">进入模块</Button>
-                </Link>
+                {module.external ? (
+                  <a href={module.href} target="_blank" rel="noopener noreferrer">
+                    <Button className="w-full">查看文档</Button>
+                  </a>
+                ) : (
+                  <Link href={module.href}>
+                    <Button className="w-full">进入模块</Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           ))}
