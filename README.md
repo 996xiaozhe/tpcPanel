@@ -33,7 +33,7 @@ TPC Panel 是一个基于 Next.js 开发的现代化数据库性能测试和监�
 
 1. 克隆项目
 ```bash
-git clone [项目地址]
+git clone https://github.com/996xiaozhe/tpcPanel.git
 cd tpcPanel
 ```
 
